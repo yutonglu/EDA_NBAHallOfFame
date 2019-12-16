@@ -1,4 +1,4 @@
-# NBA: Hall of Fame
+# NBA: Who will be the next Hall of Famer?
 
 # Executive Summary & Abstract
 Are current NBA superstars like Giannis Antetokoumpo and Steph Curry hall of fame locks? Maybe it's little too early to say so since they are still in their prime and have long way to go until their retirement. However, no one can ever really argue they are going to end up getting into the Hall of Fame due to their dominance in the league for recent years. Perhaps then, NBA fans might wonder if we could predict some particular active players' chances of getting into the HOF in the near future after their retirement.
