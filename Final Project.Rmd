@@ -1,0 +1,341 @@
+---
+title: "NBA Hall of Fame"
+output: pdf_document
+---
+```{r,message=FALSE,echo=FALSE, warning = FALSE}
+library(tidyverse)
+library(modelr)
+library(ggplot2)
+library(gridExtra)
+library(plyr)
+library(reshape)
+library(tidyr)
+library(car)
+library(arm)
+library(knitr)
+library(readxl)
+library(GGally)
+library(mgcv)
+library(boot)
+knitr::opts_chunk$set(echo = TRUE, tidy = TRUE)
+cb_palette <- c("#F80D06", "#0248CC", "#1F9402", "#02A7CC", "#CC02CC", "070007")  
+#                  red       Darkblue   green      lightble   purple     black
+```
+
+```{r echo = FALSE}
+nba = read_excel("NBA.xlsx")
+nba$HOF = as.factor(nba$HOF)
+names(nba)[names(nba) == "TRB"] <- "REB"
+nba = subset(nba, select = -c(From,To,Tm,ORB,DRB,`eFG%`,`TS%`))
+nba$`FG%` = nba$`FG%` * 100
+nba$`2P%` = nba$`2P%` * 100
+nba$`3P%` = nba$`3P%` * 100
+nba$`FT%` = nba$`FT%` * 100
+nba$PTS.cat = cut(nba$PTS, c(0,10000,20000,40000))
+nba$REB.cat = cut(nba$REB, c(0,5000,10000,20000))
+nba$AST.cat = cut(nba$AST, c(0,2000,4000,16000))
+nba$`2P%.cat` = cut(nba$`2P%`, c(39,45,50,60))
+nba$`3P%.cat` = cut(nba$`3P%`, c(-1,20,40,100))
+nba$`FT%.cat` = cut(nba$`FT%`, c(40,60,80,100))
+
+levels(nba$PTS.cat) = c("Poor Scorer", "Mediocre Scorer", "Elite Scorer")
+levels(nba$REB.cat) = c("Poor Rebounder", "Mediocre Rebounder", "Elite Rebounder")
+levels(nba$AST.cat) = c("Poor Passer", "Mediocre Passer", "Elite Passer")
+levels(nba$`2P%.cat`) = c("Poor around basket", "Mediocre around basket", "Elite around basket")
+levels(nba$`3P%.cat`) = c("Poor Sniper", "Mediocre Sniper", "Elite Sniper")
+levels(nba$`FT%.cat`) = c("Poor at the line", "Mediocre at the line", "Elite at the line")
+```
+
+# Executive Summary & Abstract
+Are current NBA superstars like Giannis Antetokoumpo and Steph Curry hall of fame locks? Maybe it's little too early to say so since they are still in their prime and have long way to go until their retirement. However, no one can ever really argue they are going to end up getting into the Hall of Fame due to their dominance in the league for recent years. Perhaps then, NBA fans might wonder if we could predict some particular active players' chances of getting into the HOF in the near future after their retirement.
+
+From this analysis, we would like to first predict the future Hall of Famers in two different approaches, versatility and shooting ability. Ultimately, we will test and compare the accuracy of the two approaches' performances to determine the final best model. After the analysis, we confirm that "stats-stuffing" seems to matter more and more if a player were to be inducted to HOF in this modern era basketball, meaning that you have to be versatile all around in terms of skill sets to a hall of fame caliber player. Regarding shooting ability, it seems like Steph Curry's effort to changing the league paradigm where 3 point shots would dominate the league seems to take more years to affect the HOF standards at least for now.
+
+# Research Questions
+The first research question regarding the versatility approach is __What are the most important skill stats to predict the future of famers?__ As modern-era basketball has been becoming more of a "Stats-Stuffing" battle regardless of positions (players like Russell Westbrook, Lebron James, and Giannis Antetokoumpo), the standard and definition of decent players have become versatility all around. Thus, we would look for what combination of skillsets seems to be the most appropriate indicator to predict the future hall of famers. The other research question is __No matter how versatile a player is all around, can he just simply be great enough to be in the HOF if you are a pure sharpshooter?__. This separation of the two approaches to determine a player's greatness seems valid as most experts and hoopers would agree you are either a shooter or an all-around "fundamental guy" in a game of basketball. Ultimately, our main research question narrows down to __Which approach between the two provides more accurate prediction for the future hall of famers?__
+
+# Data Description
+In order to collect a desired dataset to answer the research questions, we extracted about 700 retired players' career stats from the __basketball-reference__ website. This website provides a very up to date data which is updated every night whenever there happens to be a game. One of the best features of this website is that it allows us to select players of interest with easy filtering options such as Allstar/Non-Allstar, league era, and HOF/Non-HoF. In this dataset, we have 50 non-HOF players and 642 HOF players. Since shooting ability is one major aspect in this analysis, we only included players who played in the 3-point shot era which was introduced in 1979 We set the termination time point with year 2016. This is because the players who retired by then are the most recent possible candidates who just became eligible for the upcoming 2020 HOF induction.
+
+For the variables in the dataset, we have the status of HOF as our binary response, games played, minutes played, teams, points, rebounds, assists, turnovers, and etc... which makes a total of 33 variables. Within this analysis, we are only using __Points__, __Rebounds__, and __Assists (later categorized into 3 values for our modeling purpose)__ for the versatility approach and __2P%__, __3P%__, and __FT%__ for the shooting ability approach.
+
+# Exploratory Data Analysis
+
+## Univariate Analysis for both Approaches
+```{r echo = FALSE,fig.height=10,fig.width=10}
+a = ggplot(nba, aes(x = PTS, fill = HOF)) + geom_density(alpha = 0.7) + ggtitle("Points") + xlab("Points") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+
+b = ggplot(nba, aes(x = REB, fill = HOF)) + geom_density(alpha = 0.7) + ggtitle("Rebounds") + xlab("Rebounds") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5)) 
+
+c = ggplot(nba, aes(x = AST, fill = HOF)) + geom_density(alpha = 0.7) + ggtitle("Assists") + xlab("Assists") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+
+d = ggplot(nba, aes(x = `2P%`, fill = HOF)) + geom_density(alpha = 0.7) + ggtitle("2P%") + xlab("2P%") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+
+e = ggplot(nba, aes(x = `3P%`, fill = HOF)) + geom_density(alpha = 0.7) + ggtitle("3P%") + xlab("3P%") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5)) 
+
+f = ggplot(nba, aes(x = `FT%`, fill = HOF)) + geom_density(alpha = 0.7) + ggtitle("FT%") + xlab("FT%") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+
+grid.arrange(a,b,c,d,e,f, ncol=2, nrow = 3, top = "Distribution of each predicor by HOF Status for Both Approaches") 
+```
+
+From the ggpairs plot in appendix 1, each predictor variable for the versatility approach is fairly highly correlated to the HOF response, whereas each predictor for shooting ability is relatively a lot less correlated with the response. From the correlation coefficients, __points__ and __rebounds__ are the two most strongly correlated predictors with __HOF__ status for versatility, whereas __2P%__ and __FT%__ are the two most correlated predictors with HOF status even though __FT%__ is still very low in terms of the magnitude of the correlation. These findings lead us to build a blueprint for modeling the fits later in this analysis. From the plot above, we found the main difference between the two approaches in terms of the differences of distributions is that the skewness differs with respect to the status of __HOF__.
+It is clear that the predictors for non-HOF are all right-skewed, whereas they are pretty close to a normal distribution for HOF. This makes a perfect sense that HOF players exceptionally stuffed their stats sheets compared to the non-HOF players. On the other hand, shooting ability approach indicates that no matter if you are a HOF caliber player or not, players' shooting ability evenly varies because shooting is the aspect in the game of basketball that is a pretty unpredictable day in and day out.
+
+From appendix 2 and 3, we checked the monotonic relationships between the response and each predictor variable for each approach. It seems that none of the log transformations that we originally thought would help is not significantly helpful in terms of forming monotonic relationships between the response and predictors. In other words, all 6 predictors are doing more and less good job shaping monotonic relationships, which lead us to go with non-transformation later when we proceed with building models.
+
+
+## Bivariate Analysis for both Approaches
+```{r echo = FALSE,warning=FALSE,fig.width=9,fig.height=8}
+nba$HOF = ifelse(nba$HOF=="Yes",1,0)
+nba$HOF = ifelse(nba$HOF == 1, "Yes", "No")
+nba$HOF = as.factor(nba$HOF)
+
+#PTS & REB (2 strongest COR with HOF)
+s = ggplot(nba, aes(PTS, REB, color = factor(HOF))) + geom_jitter(height = 0.5, width = 0.5, size = 0.5) + geom_text(aes(label=ifelse(PTS>25000 & REB > 10000 ,as.character(Player),'')), alpha = 1, size = 3, hjust=0,vjust=0) + xlim(0,50000) + ggtitle("Points and Rebounds")  + scale_color_manual(values = cb_palette, labels = c('No', 'Yes')) + labs(color = "HOF") + theme_bw() + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5)) 
+
+#PTS & AST
+t = ggplot(nba, aes(PTS, AST, color = factor(HOF))) + geom_jitter(height = 0.5, width = 0.5, size = 0.5) + geom_text(aes(label=ifelse(PTS>17000 & AST > 5000 ,as.character(Player),'')), alpha = 1, size = 3, hjust=0,vjust=0) + xlim(0,50000) + ggtitle("Points and Assists")  + scale_color_manual(values = cb_palette, labels = c('No', 'Yes')) + labs(color = "HOF") + theme_bw() + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5)) 
+
+
+#2P% & FT% (2 strongest COR with HOF)
+u = ggplot(nba, aes(`2P%`, `FT%`, color = factor(HOF))) + geom_jitter(height = 0.5, width = 0.5, size = 0.5) + geom_text(aes(label=ifelse(`2P%`>50 & `FT%`>90 ,as.character(Player),'')), alpha = 1, size = 3, hjust=0,vjust=0) + xlim(40,60) + ylim(40,100) + ggtitle("2P% and FT%")  + scale_color_manual(values = cb_palette, labels = c('No', 'Yes')) + labs(color = "HOF") + theme_bw() + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5)) 
+
+#2P% & 3P%
+v = ggplot(nba, aes(`2P%`, `3P%`, color = factor(HOF))) + geom_jitter(height = 0.5, width = 0.5, size = 0.5) + geom_text(aes(label=ifelse(`2P%`>50 & `3P%`>40 ,as.character(Player),'')), alpha = 1, size = 3, hjust=0,vjust=0) + xlim(40,60) + ylim(0,100) + ggtitle("2P% and 3P%")  + scale_color_manual(values = cb_palette, labels = c('No', 'Yes')) + labs(color = "HOF") + theme_bw() + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5)) 
+
+grid.arrange(s,t,u,v, ncol=2, nrow = 2, top = "Bivariate Analysis by HOF Status")
+```
+
+Here we are exploring some of the noticeable and interesting bivariate relationships between predictors by each status of HOF by displaying some of the legendary players' names who put up gigantic stats in their career. For points and rebounds, we spot some HOF legends like __Kareem Abdul-Jabbar__, __Karl Malone__, and __Shaquille O'Neal__. Actually, Kareem is the all time leading scorer in NBA history followed by Karl Marlone who is the second in the category. For the first ballot Hall of famers in the near future who just became eligible for 2020 HOF induction, we see __Tim Duncan__, __Kevin Garnett__, and __Dirk Nowitzki__. These players are a huge factor that would affect our model fits later because their numbers are enormous but still classified as non-HOF players in our dataset at this point. Thus, we should remove these future hall of famers before we fit the models. For assists and points, we spot legendary point guards such as __John Stockton__ and __Jason Kidd__ who lead the all time assists category in NBA history. For shooting ability, overall, we do not see linear relationships as we've seen in the versatility approach. For 2P% and FT%, we spot __Mark Price__ and __Steve Nash__ as Non-HOF and HOF players, respectively, whose shooting percentages are off the chart in their career. For 2P% and 3P%, we observe a very outlier-type player, whose 3P shooting was 100%. This player happens to be __Eddy Curry__ who played center position in the league for 8 years. He had two total attempts for 3P shots and knocked down both in his entire career.
+
+## Trivariate Analysis
+```{r echo = FALSE,warning=FALSE,fig.width=10,fig.height=8.7,fig.align='center'}
+w = ggplot(nba, aes(REB, PTS, color = AST.cat, group = AST.cat)) + geom_jitter(height = 0.5, width = 0.5, size = 0.5) + facet_grid(~HOF, labeller = label_both) + geom_smooth(method = "lm", se = FALSE) + scale_color_manual(values = cb_palette) + labs(color = "Passing Ability") +  geom_text(aes(label=ifelse(PTS>25000 & REB > 10000 ,as.character(Player),'')),size = 3, hjust=0,vjust=0) + xlim(0,30000) + ggtitle("Versatility: Distinguished Players with more than 25000 PTS and 10000 Rebs") + theme(plot.title = element_text(size = 7, hjust = 0.5, face = "bold")) + theme(axis.title=element_text(size=10))+theme_bw()
+
+x = ggplot(nba, aes(`FT%`, `2P%`, color = `3P%.cat`, group = `3P%.cat`)) + geom_jitter(height = 0.5, width = 0.5, size = 0.5) + facet_grid(~HOF, labeller = label_both) + geom_smooth(method = "lm", se = FALSE) + scale_color_manual(values = cb_palette) + labs(color = "3PT Ability") +  geom_text(aes(label=ifelse(`FT%`>90 & `2P%`> 50 ,as.character(Player),'')),size = 2.5, hjust=0,vjust=0) + xlim(40,100) + ggtitle("Shooting Ability: Distinguished Players with FT% and 2P% above 90% and 50%") + theme(plot.title = element_text(size = 7, hjust = 0.5, face = "bold")) + theme(axis.title=element_text(size=10))+ theme_bw()
+
+grid.arrange(w,x, ncol = 1, nrow = 2, top = "Legendary Players with Huge Milestones")
+```
+
+Ultimately, we present the trivariate visualization that captures all 3 predictors for each approach at once. For each approach, we added passing ability (assists) and 3P ability (3P%) as categories this time as they are more meaningful and easier to interpret to divide the players in such way and that they are the least correlated predictors for each approach. We added linear smooth lines for each status but they are not very meaningful because we have a huge discrepancy for the number of data points for each status of HOF. For versatility, we demonstrate some of the all time greatest such as Kareem, Shaq, Julius Irving, Duncan, and Kevin Garnett once again with a huge milestone of reaching over 25000 points and 10000 boards. We are able to notice that not all of them is an elite passer. For shooting ability, once again, we spot Steve Nash and Mark Price who are the only two retired players in NBA history that are in the "180 club", meaning that they used to be so purely talented shooters who had over 50% for 2P%, 40% from downtown, and 90% from the free throw line.
+
+
+# Fitting Models 
+### Removing those "Usual Suspects": Dirk Nowitzki, Kevin Garnett, Kobe Bryant, Tim Duncan, Paul Pierce
+
+```{r echo = FALSE}
+#Taking out legenndary noisy players
+nba.modified = (nba[ -c(608,520,482,270,233), ])
+```
+
+```{r}
+#Versatility (Approach 1)
+# two most strongly correlated to response
+mod1 = glm(HOF ~ PTS + REB, family = binomial, data = nba.modified) 
+# interaction between the two variables
+mod2 = glm(HOF ~ PTS * REB, family = binomial, data = nba.modified) 
+# all 3 variables without interaction
+mod3 = glm(HOF ~ PTS + REB + AST.cat, family = binomial, data = nba.modified) 
+
+#Shooting Ability (Approach 2)
+# two most strongly correlated to response
+mod4 = glm(HOF ~ `2P%` + `FT%`, family = binomial, data = nba.modified) 
+# interaction between the two variables
+mod5 = glm(HOF ~ `2P%` * `FT%`, family = binomial, data = nba.modified) 
+# all 3 variables without interaction
+mod6 = glm(HOF ~ `2P%` + `FT%` + `3P%.cat`, family = binomial, data = nba.modified) 
+```
+
+For our modeling, we come up with 3 models for each approach based on the findings from the EDA section plus our basketball knowledge & common sense. For each approach, we start with the two most strongly correlated predictors with the response with and without interaction. Then, we also add all three predictors without any interaction just to detect pure main effects. The main rationale for this is that it is obvious that players who are in the league for longer must get more career total stats than those who are not although a very few exceptions can exist. Thus, we do not look for any 2-way or 3-way interaction between the three predictors for each approach.
+
+At this stage, we still want to find out and keep the best model for both approaches to demonstrate how each best model fit looks like for each approach. We refer to AIC and Anova criteria to determine the models that predict the future Hall of Famers the best. (Appendix 4) For the versatility approach, the result reveals that all three predictors as main effects only turns out to be the best model, whereas the main effects of 2P% and FT% without any interaction is the best model for shooting ability. Among all 6 of the models, we find that __Model 3 (PTS + REB + AST.cat)__ is the very best one for predicting the future hall of famers. Later in our analysis, we are going to implement another method to test and compare the accuracy of our prediction between the two approaches using confusion matrix. 
+
+## Model Fits for Each Approach
+```{r echo = FALSE,fig.width=8}
+#Versatility
+versatility.df = expand.grid(PTS = seq(1000,40000,1000), REB = seq(500,20000,2000), AST.cat = nba$AST.cat)
+versatility.pred = predict(mod3, type = "response", newdata = versatility.df)
+versatility.pred.df = data.frame(versatility.df, HOF = as.vector(versatility.pred))
+ggplot(versatility.pred.df, aes(x = PTS, y = HOF, group = REB, color = REB)) + geom_line() + facet_grid(~AST.cat) + xlab("Points") + ylab("Probability of being in HOF") + ggtitle("Best Model: Versatility") + theme(plot.title = element_text(face = "bold", hjust = 0.5)) + theme(axis.title=element_text(size=10)) + coord_cartesian(xlim = c(1000, 40000)) + scale_x_continuous(breaks=c(1000,10000,20000,30000,40000))+theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+The model fits for versatility describes what we expected in a way that a player with more career points, boards, and high passing ability is much more likely to be in HOF than those with less stats in those corresponding categories. If we look at players with 1000 career points (minimum value for points in x-axis) and different number of rebounds, we see a dramatic gap for the probability of being in HOF for each passing ability. This strongly indicates that passing ability significantly matters. Also, seeing that an imaginary player with close to 40,000 career point with 0 rebound has almost 100% chance of getting into HOF supports that points are one of the most crucial skills in the game of basketball to determine someone's greatness.
+
+```{r echo = FALSE,fig.height=3.8}
+shooting.df = expand.grid(`2P%` = seq(40,60,0.5), `FT%` = seq(40,95,10))
+shooting.pred = predict(mod4, type = "response", newdata = shooting.df)
+shooting.pred.df = data.frame(shooting.df, HOF = as.vector(shooting.pred))
+ggplot(shooting.pred.df, aes(x = X2P., y = HOF, group = FT., color = FT.)) + geom_line() + xlab("2P%") + ylab("Probability of being in HOF") + labs(color = "FT%") + ggtitle("Best Model: Shooting Ability") + theme(plot.title = element_text(face = "bold", hjust = 0.5)) + theme(axis.title=element_text(size=10)) + ylim(0,1)
+```
+
+Again, the model fits for shooting ability describes pretty much what we expected. Players with a higher percentage of 2P shooting and free throws are much more likely to be in HOF than those are not. One thing to notice in this plot is that an imaginary player with unrealistically good shooting percentages (60% for 2P shooting and close to 100% from the free-throw line) does not have a perfect 100% chance to become a hall of famer. This is another evidence we can assert pure shooting ability is not as major as versatility to be a key indicator to predict the future hall of famers.
+
+## Confusion Matrix for Both Approaches
+
+```{r echo = FALSE}
+#Approach 1
+confusion <- table(nba.modified$HOF, as.integer(predict(mod3, type='response')>0.5), dnn=c('reality','prediction'))
+colnames(confusion) = c('Prediction No HOF',"Prediction HOF (Versatility)")
+rownames(confusion) = c('Actual No HOF',"Actual HOF")
+kable(confusion)
+
+in.sample.preds <- round(fitted(mod3))
+in.sample.confusion <- table(in.sample.preds, nba.modified$HOF,
+                             dnn=c("prediction","data"))
+in.sample.correctprediction.rate <- sum(diag(in.sample.confusion))/sum(in.sample.confusion)
+
+#Approach 2
+confusion1 <- table(nba.modified$HOF, as.integer(predict(mod4, type='response')>0.5), dnn=c('reality','prediction'))
+colnames(confusion1) = c('Prediction No HOF',"Prediction HOF (Shooting Ability)")
+rownames(confusion1) = c('Actual No HOF',"Actual HOF")
+kable(confusion1)
+
+in.sample.preds1 <- round(fitted(mod4))
+in.sample.confusion1 <- table(in.sample.preds1, nba.modified$HOF,
+                             dnn=c("prediction","data"))
+in.sample.correctprediction.rate1 <- sum(diag(in.sample.confusion1))/sum(in.sample.confusion1)
+
+#sum(diag(in.sample.confusion))/sum(in.sample.confusion)
+#sum(diag(in.sample.confusion1))/sum(in.sample.confusion1)
+
+#Approach 1 predicts better than Approach 2
+```
+
+As mentioned earlier, here we implement the confusion matrix to measure and compare the accuracy of the each best model for both approaches. It turns out that the versatility approach provides a more accurate prediction for the future hall of famers than the shooting ability approach. (96.2% vs 92.7%)
+
+## Predictions for the Noticeable 2020 HOF Candidates
+```{r,echo=FALSE}
+prediction = predict(mod3, newdata = data.frame(PTS = c(26496,26071,33643,17700,15802,16784,12996,15586,15687,16927), REB = c(15091,14662,7047,10101,2992,13017,9443,3872,7352,9040), AST.cat = c("Elite Passer", "Elite Passer", "Elite Passer", "Mediocre Passer", "Elite Passer", "Poor Passer", "Mediocre Passer", "Elite Passer", "Mediocre Passer", "Mediocre Passer")), type = "response")
+prediction = sort(prediction,decreasing = TRUE)
+df3 = data.frame(prediction)
+colnames(df3) = c("Probability of Making HOF")
+rownames(df3) = c("Tim Duncan","Kobe Bryant","Kevin Garnett","Buck Williams","Shawn Marion","Elton Brand","Terry Porter","Chauncey Billups","Larry Nance","Horace Grant")
+kable(signif(df3,3))
+```
+
+Lastly, we are presenting prediction probabilities for 10 of the noticeable 2020 HOF candidates who are ranked by their career win shares, an amount of individual's contribution to their team's wins. We are very satisfied with the predictions as the probabilities of being in the hall of fame for the most famous legendary recently retired players __Tim Duncan__, __Kobe Bryant__, and __Kevin Garnett__ are all almost 100%.
+
+# Discussion & Conclusion
+
+As a game of basketball in the league NBA keeps evolving with changing trends, the standard and definition of great players also change by seasons. This may imply that the eligibility of players getting into the HOF could vary by season. Unlike old school basketball, where certain positions took roles of their "own things" (centers in the paint and guards moving the ball outside), the distinction of roles in this modern era basketball has almost disappeared. Any position player can excel in certain areas that were not used to be "theirs." That is, the fans are being more and more fascinated by those monstrous "triple-doublers" and those ridiculously long ranges 3P shots from downtown that elite players put up day in and day out, representing the popularity and prosperity of NBA nowadays. In order to address these recent trends more clearly, we explored the two main approaches to measure and distinguish which type of a player defines greatness in a ball game. Ultimately, it turns out that a hall of fame caliber all-around versatile player is pretty much about the three most fundamental stats: Points, Rebounds, and Assists. On the other hand, if you are more close to a pure shooter, it seems you do not have to shoot very well from all around, meaning that 3P shots are not as major as the other two 2P and free throw shots yet. However, the fans are very well-aware of the importance and dominance of 3P shots more and more as the trends and strategies in the game of basketball are being centered around 3P shots. Finally, after scrutiny in each approach, we come to conclude that versatility matters the most in order to classify whether a player is likely to be in the hall of fame after their retirement.
+
+# Limitations
+
+Regarding the dataset we have, there is a huge imperfection we had to carry as we proceeded with some statistical approaches for this analysis. As our analysis is based on binomial logistic regression, we had limitations for more appropriate analysis due to a glaring imbalance for the data points for each binary response status. That is, since not everyone makes it into the hall of fame and it is very hard to be an inductee due to high standards, we have a way more non-hall of famers than the hall of famers in our dataset. In terms of variables, we would hope to have a variable for whether a player has ever won a championship or no because we would like to know if having a ring significantly affects the chance of being in the hall of fame, but we have to manually include that status by checking each individual's career as the website does not provide the filtering for that option specifically. 
+
+
+# Appendix 
+
+## Appendix 1: Pairsplot
+```{r echo = FALSE,fig.height=6,fig.width=9}
+#model1
+nba$HOF = ifelse(nba$HOF=="Yes",1,0)
+ggpairs(nba, columns = c(2,21,15,16)) + ggtitle("Pairs plot for Versatility: Approach 1") + theme(plot.title = element_text(hjust = 0.5))+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+\vspace{1mm}
+
+```{r echo=FALSE,fig.height=5,fig.width=9}
+#model2
+ggpairs(nba, columns = c(2, 23, 24, 25)) + ggtitle("Pairs plot for Shooting Ability: Approach 2") + theme(plot.title = element_text(hjust = 0.5))
+
+nba$HOF = ifelse(nba$HOF == 1, "Yes", "No")
+nba$HOF = as.factor(nba$HOF)
+```
+
+
+## Appendix 2: Monotonic Relationship for Transformation check (Approach 1) 
+```{r,echo=FALSE,warning=FALSE,fig.height=4}
+nba$HOF = ifelse(nba$HOF=="Yes",1,0)
+#PTS
+g = ggplot(nba, aes(PTS, HOF)) + geom_jitter(width = 0, height = 0.1) + geom_smooth(method = "loess") + geom_smooth(method = "glm", method.args = list(family = 'binomial'), color = "orange", se = FALSE) + ggtitle("Without Log Transformation") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5)) 
+h = ggplot(nba, aes(PTS, HOF)) + geom_jitter(width = 0, height = 0.1) + geom_smooth(method = "loess") + geom_smooth(method = "glm", method.args = list(family = 'binomial'), color = "orange", se = FALSE) + scale_x_log10() + ggtitle("With Log Transformation") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5)) 
+
+#REB 
+i = ggplot(nba, aes(REB, HOF)) + geom_jitter(width = 0, height = 0.1) + geom_smooth(method = "loess") + geom_smooth(method = "glm", method.args = list(family = 'binomial'), color = "orange", se = FALSE) + ggtitle("Without Log Transformation") + theme(plot.title = element_text(size = 10)) + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+j = ggplot(nba, aes(REB, HOF)) + geom_jitter(width = 0, height = 0.1) + geom_smooth(method = "loess") + geom_smooth(method = "glm", method.args = list(family = 'binomial'), color = "orange", se = FALSE) + scale_x_log10() + ggtitle("With Log Transformation") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+
+#AST 
+k =ggplot(nba, aes(AST, HOF)) + geom_jitter(width = 0, height = 0.1) + geom_smooth(method = "loess") + geom_smooth(method = "glm", method.args = list(family = 'binomial'), color = "orange", se = FALSE) + ggtitle("Without Log Transformation") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+l = ggplot(nba, aes(AST, HOF)) + geom_jitter(width = 0, height = 0.1) + geom_smooth(method = "loess") + geom_smooth(method = "glm", method.args = list(family = 'binomial'), color = "orange", se = FALSE) + scale_x_log10() + ggtitle("With Log Transformation") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+
+
+grid.arrange(g,h, ncol=2, nrow = 1, top = "Points")  
+grid.arrange(i,j, ncol=2, nrow = 1, top = "Rebounds")  
+grid.arrange(k,l, ncol=2, nrow = 1, top = "Assists") 
+```
+
+
+## Appendix 3: Monotonic Relationship for Transformation check (Approach 2) 
+```{r,echo=FALSE,warning=FALSE,fig.height=4}
+#2PT%
+m = ggplot(nba, aes(`2P%`, HOF)) + geom_jitter(width = 0, height = 0.1) + geom_smooth(method = "loess") + geom_smooth(method = "glm", method.args = list(family = 'binomial'), color = "orange", se = FALSE) + ggtitle("Without Log Transformation") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+n = ggplot(nba, aes(`2P%`, HOF)) + geom_jitter(width = 0, height = 0.1) + geom_smooth(method = "loess") + geom_smooth(method = "glm", method.args = list(family = 'binomial'), color = "orange", se = FALSE) + scale_x_log10() + ggtitle("With Log Transformation") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+
+grid.arrange(m,n, ncol=2, nrow = 1, top = "2P%")
+```
+
+```{r ,echo=FALSE,warning=FALSE,fig.height=4}
+#FT%
+o = ggplot(nba, aes(`FT%`, HOF)) + geom_jitter(width = 0, height = 0.1) + geom_smooth(method = "loess") + geom_smooth(method = "glm", method.args = list(family = 'binomial'), color = "orange", se = FALSE) + ggtitle("Without Log Transformation") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+p = ggplot(nba, aes(`FT%`, HOF)) + geom_jitter(width = 0, height = 0.1) + geom_smooth(method = "loess") + geom_smooth(method = "glm", method.args = list(family = 'binomial'), color = "orange", se = FALSE) + scale_x_log10() + ggtitle("With Log Transformation") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+
+
+#3P%
+q = ggplot(nba, aes(`3P%`, HOF)) + geom_jitter(width = 0, height = 0.1) + geom_smooth(method = "loess") + geom_smooth(method = "glm", method.args = list(family = 'binomial'), color = "orange", se = FALSE) + ggtitle("Without Log Transformation") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+r = ggplot(nba, aes(`3P%`, HOF)) + geom_jitter(width = 0, height = 0.1) + geom_smooth(method = "loess") + geom_smooth(method = "glm", method.args = list(family = 'binomial'), color = "orange", se = FALSE) + scale_x_log10() + ggtitle("With Log Transformation") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+
+
+grid.arrange(o,p, ncol=2, nrow = 1, top = "FT%")  
+grid.arrange(q,r, ncol=2, nrow = 1, top = "3P%") 
+```
+
+\newpage
+
+## Appendix 4: Some Model Selection Methods: AIC and ANOVA 
+```{r echo = FALSE,fig.height=5} 
+#AIC(mod1)
+#AIC(mod2) 
+#AIC(mod3) #best model
+#AIC(mod4) #best model
+#AIC(mod5)
+#AIC(mod6)
+
+#anova(mod1,mod3, test = "Chisq") # Assist.cat is significant (approach 1)
+#anova(mod1,mod2, test = "Chisq") # interaction doesnt matter (approach 1)
+#anova(mod4,mod5, test = "Chisq") # interaction doesnt matter (approach 2)
+#anova(mod4,mod6, test = "Chisq") # 3P% not significant (approach 2)
+
+#quick finding? - 3pt% is not as significant as 2P% and FT% (Approach 2)
+#               - AST is significant as PTS and REB (Approach 1)
+
+df1 = data.frame(AIC(mod1), AIC(mod2), AIC(mod3), AIC(mod4), AIC(mod5), AIC(mod6))
+rownames(df1) = c("AIC values for each model")
+colnames(df1) = c("Mod1", "Mod2", "Mod3", "Mod4", "Mod5", "Mod6")
+table1 = t(df1)
+kable(signif(table1, 5), digits= 5)
+
+df2 = data.frame(c(0.011,0.199,0.604, 0.122))
+colnames(df2) = c("Anova P-values")
+rownames(df2) = c("Addition of AST to PTS + REB? (Versatilty)", "Interaction between PTS and REB or just Main Effects? (Versatility)", "Addition of 3P% to 2P% + FT% (Shooting Ability)", "Interaction between 2P% and FT% or just Main Effects? (Shooting Ability)")
+kable(signif(df2))
+```
+
+
+## Appendix 5: Assumption Check 
+
+```{r,echo=FALSE,fig.width=9,fig.height=7.2}
+model.df=data.frame(nba.modified, .fitted = fitted.values(mod3), .resid = residuals(mod3, type = 'response'))
+
+aa = ggplot(model.df, aes(.fitted, .resid,color= HOF)) + geom_point() + geom_text(aes(label=ifelse(.resid < -0.7,as.character(Player),'')), alpha = 1, size = 3, hjust=0,vjust=0) + geom_smooth(method = 'loess',color="orange",method.args = list(degree = 1))+ scale_color_manual(values = cb_palette, labels = c('No', 'Yes')) + xlim(0,1.05) + ggtitle("Residuals vs Fitted") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+
+bb = ggplot(model.df, aes(PTS, .resid,color= HOF)) + geom_point() + geom_text(aes(label=ifelse(PTS > 25000 & HOF == "No", as.character(Player),'')), alpha = 1, size = 3, hjust = 0, vjust = 0) + geom_smooth(method = 'loess',color="orange",method.args = list(degree = 1)) + scale_color_manual(values = cb_palette, labels = c('No', 'Yes')) + ggtitle("Residuals vs Points") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+
+cc = ggplot(model.df, aes(REB, .resid,color= HOF)) + geom_point() + geom_smooth(method = 'loess',color="orange",method.args = list(degree = 1)) + scale_color_manual(values = cb_palette, labels = c('No', 'Yes')) + ggtitle("Residuals vs Rebounds") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+
+dd =ggplot(model.df, aes(AST.cat, .resid,color= HOF)) + geom_point() + geom_smooth(method = 'loess',color="orange",method.args = list(degree = 1)) + scale_color_manual(values = cb_palette, labels = c('No', 'Yes')) + ggtitle("Residuals vs Assists Category") + theme(plot.title = element_text(size = 8, face = "bold", hjust = 0.5))
+
+grid.arrange(aa,bb,cc,dd, ncol=2, nrow = 2, top = "Residual Check")  
+```
+
+Nothing unexpected seems to be going on from those residual plots above. For the most strongly correlated predictor, __Points__, we observe that higher career points lead to residual of closer to 0 for hall of famers, whereas higher points lead to much deviation from residual values of 0 because the "response" residual we are doing is simply 0 or 1 minus the model probabilities, so this makes perfect sense.
